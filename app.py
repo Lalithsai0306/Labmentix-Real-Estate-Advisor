@@ -2,90 +2,104 @@ import streamlit as st
 import pandas as pd
 import joblib
 import numpy as np
+from sklearn.preprocessing import LabelEncoder
 
-# 1. Load your trained models and the reference data
-@st.cache_resource
+# --- PAGE SETUP ---
+st.set_page_config(page_title="Labmentix Real Estate AI", layout="wide")
+st.title("🏘️ Real Estate Investment Advisor")
+st.markdown("Developed for Labmentix | Powered by XGBoost & Random Forest")
+
+# --- LOAD DATA & MODELS ---
+@st.cache_resource # This speeds up the app by loading models only once
 def load_assets():
-    rf = joblib.load('rf_classifier_model.pkl')
-    xgb = joblib.load('xgboost_price_model.pkl')
-    # We use this to calculate city medians and get 'hidden' feature values
-    df = pd.read_csv('ml_ready_housing_data.csv')
-    return rf, xgb, df
+    rf_model = joblib.load('rf_classifier_model.pkl')
+    xgb_model = joblib.load('xgboost_price_model.pkl')
+    # Load the clean data to fit our LabelEncoders on the fly
+    df_clean = pd.read_csv('ml_ready_housing_data.csv')
+    return rf_model, xgb_model, df_clean
 
 rf_model, xgb_model, df_clean = load_assets()
 
-# 2. Page Configuration
-st.set_page_config(page_title="Real Estate Investment Advisor", layout="centered")
-st.title("🏘️ Real Estate Investment Advisor")
-st.write("Powered by Random Forest & XGBoost Models")
+# --- SIDEBAR INPUTS ---
+st.sidebar.header("Property Details")
 
-# 3. Input Lists (Alphabetical to match your Day 3 LabelEncoder)
-cities = sorted(['mumbai', 'delhi', 'bangalore', 'hyderabad', 'ahmedabad', 'chennai', 'kolkata', 'surat', 'pune', 'jaipur'])
-types = sorted(['Apartment', 'Independent House', 'Villa', 'Penthouse'])
-transits = sorted(['High', 'Medium', 'Low'])
+# We use the unique values from our dataset for the dropdowns
+city = st.sidebar.selectbox("City", df_clean['City'].unique())
+property_type = st.sidebar.selectbox("Property Type", df_clean['Property_Type'].unique())
+transport = st.sidebar.selectbox("Public Transport Accessibility", ['High', 'Medium', 'Low'])
 
-# 4. UI Inputs
-with st.container():
-    col1, col2 = st.columns(2)
+size_sqft = st.sidebar.slider("Size (SqFt)", 500, 5000, 1500)
+current_price = st.sidebar.number_input("Current Asking Price (Lakhs)", min_value=10.0, max_value=1000.0, value=150.0)
+age = st.sidebar.slider("Age of Property (Years)", 0, 50, 5)
+
+# --- INFER MINOR FEATURES ---
+# To make the app user-friendly, we don't ask the user for all 20 columns. 
+# We assume standard values for the minor features based on the chosen city.
+city_data = df_clean[df_clean['City'] == city].iloc[0]
+
+# Construct the raw dataframe for prediction
+input_data = pd.DataFrame([{
+    'State': city_data['State'],
+    'City': city,
+    'Locality': city_data['Locality'],
+    'Property_Type': property_type,
+    'BHK': max(1, size_sqft // 600), # Rough estimate
+    'Size_in_SqFt': size_sqft,
+    'Price_in_Lakhs': current_price,
+    'Price_per_SqFt': current_price / size_sqft,
+    'Furnished_Status': 'Semi-furnished',
+    'Floor_No': 3,
+    'Total_Floors': 10,
+    'Age_of_Property': age,
+    'Nearby_Schools': 5,
+    'Nearby_Hospitals': 3,
+    'Public_Transport_Accessibility': transport,
+    'Parking_Space': 'Yes',
+    'Security': 'Yes',
+    'Facing': 'East',
+    'Owner_Type': 'Builder',
+    'Availability_Status': 'Ready_to_Move',
+    'Amenities_Count': 4
+}])
+
+# --- ENCODING ---
+# We must apply the exact same LabelEncoding as Day 3
+categorical_cols = ['Property_Type', 'Furnished_Status', 'Public_Transport_Accessibility', 
+                    'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status', 
+                    'State', 'City', 'Locality']
+
+le = LabelEncoder()
+for col in categorical_cols:
+    le.fit(df_clean[col].astype(str)) # Learn the vocabulary
+    # Safely transform the input
+    input_data[col] = input_data[col].map(lambda s: le.transform([s])[0] if s in le.classes_ else 0)
+
+# Drop Price_per_SqFt for XGBoost (as per Day 4 logic)
+xgb_input = input_data.drop(columns=['Price_per_SqFt'], errors='ignore')
+
+# --- PREDICTIONS & UI ---
+st.write("---")
+st.subheader("AI Investment Analysis")
+
+col1, col2 = st.columns(2)
+
+if st.button("Analyze Property", type="primary"):
+    # 1. Classification (Good/Bad Investment)
+    is_good = rf_model.predict(input_data)[0]
+    
+    # 2. Regression (Future Price)
+    future_price = xgb_model.predict(xgb_input)[0]
+    
     with col1:
-        city = st.selectbox("Select City", cities, index=cities.index('hyderabad'))
-        prop_type = st.selectbox("Property Type", types)
-        transit = st.selectbox("Transit Access", transits)
+        if is_good == 1:
+            st.success("✅ **APPROVED:** This is classified as a Good Investment.")
+        else:
+            st.error("❌ **REJECTED:** This property does not meet high-yield investment criteria.")
+            
     with col2:
-        size = st.number_input("Size (SqFt)", value=1500, step=50)
-        price = st.number_input("Current Asking Price (Lakhs)", value=65.0, step=1.0)
-        age = st.number_input("Age of Property (Years)", value=2, min_value=0, max_value=50)
+        st.info(f"📈 **5-Year Forecast:** ₹ {future_price:.2f} Lakhs")
+        profit = future_price - current_price
+        st.metric(label="Estimated Profit", value=f"₹ {profit:.2f} Lakhs", delta=f"{(profit/current_price)*100:.1f}%")
 
-if st.button("Run AI Analysis 🚀", use_container_width=True):
-    # --- STEP 1: PREPARE DATA ---
-    # We use the first row of your data as a 'template' for hidden features (Locality, Facing, etc.)
-    input_row = df_clean.iloc[0:1].copy()
-    
-    # Overwrite template with User UI inputs
-    input_row['City'] = cities.index(city)
-    input_row['Property_Type'] = types.index(prop_type)
-    input_row['Public_Transport_Accessibility'] = transits.index(transit)
-    input_row['Size_in_SqFt'] = size
-    input_row['Price_in_Lakhs'] = price
-    input_row['Age_of_Property'] = age
-    input_row['BHK'] = max(1, size // 600)
-    input_row['Price_per_SqFt'] = (price * 100000) / size
-
-    # --- STEP 2: PREDICTIONS ---
-    # Get feature names from models to ensure exact column alignment
-    rf_features = rf_model.feature_names_in_
-    xgb_features = xgb_model.get_booster().feature_names
-    
-    is_good = rf_model.predict(input_row[rf_features])[0]
-    future_val = xgb_model.predict(input_row[xgb_features])[0]
-
-    # --- STEP 3: DISPLAY RESULTS ---
-    st.write("---")
-    if is_good == 1:
-        st.success("#### ✅ APPROVED: This is a Good Investment")
-    else:
-        st.error("#### ❌ REJECTED: Sub-Optimal Investment")
-        
-    c1, c2 = st.columns(2)
-    c1.metric("5-Year Price Forecast", f"₹ {future_val:.2f} L")
-    profit = future_val - price
-    c2.metric("Estimated Profit", f"₹ {profit:.2f} L", delta=f"{(profit/price)*100:.1f}% ROI")
-
-    # --- STEP 4: THE EXPLAINER (Day 3 Logic) ---
-    st.subheader("Why this decision?")
-    city_encoded = cities.index(city)
-    city_median = df_clean[df_clean['City'] == city_encoded]['Price_per_SqFt'].median()
-    current_psf = (price * 100000) / size
-    
-    # Check against the rules you defined in day3_features.py
-    is_undervalued = current_psf < city_median
-    is_new = age <= 15
-    has_transit = transit in ['High', 'Medium']
-
-    col_a, col_b, col_c = st.columns(3)
-    col_a.write(f"**Price Check**\n{'✅ Below' if is_undervalued else '❌ Above'} City Avg")
-    col_b.write(f"**Age Check**\n{'✅ New' if is_new else '❌ Old'} (<15yrs)")
-    col_c.write(f"**Transit Check**\n{'✅ Good' if has_transit else '❌ Poor'} Access")
-
-    if not is_good:
-        st.info(f"💡 Tip: For an approval in {city.title()}, the Price per SqFt should be below ₹{city_median:.0f}. Yours is ₹{current_psf:.0f}.")
+st.write("---")
+st.caption("Note: This tool uses XGBoost and Random Forest algorithms trained on historical data. Market conditions may vary.")
