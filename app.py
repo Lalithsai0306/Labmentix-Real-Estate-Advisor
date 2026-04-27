@@ -13,7 +13,6 @@ def load_assets():
     rf = joblib.load('rf_classifier_model.pkl')
     xgb = joblib.load('xgboost_price_model.pkl')
     df = pd.read_csv('ml_ready_housing_data.csv')
-    # Load the exact column order your model was trained on
     features = joblib.load('model_features.pkl')
     return rf, xgb, df, features
 
@@ -25,7 +24,7 @@ types = sorted(['Apartment', 'Independent House', 'Villa', 'Penthouse'])
 transits = ['High', 'Medium', 'Low']
 
 st.sidebar.header("Property Details")
-city = st.sidebar.selectbox("City", options=cities, index=3) # Default Hyderabad
+city = st.sidebar.selectbox("City", options=cities, index=3)
 property_type = st.sidebar.selectbox("Property Type", options=types)
 transport = st.sidebar.selectbox("Transit Access", options=transits)
 size_sqft = st.sidebar.slider("Size (SqFt)", 500, 5000, 1500)
@@ -34,14 +33,12 @@ age = st.sidebar.slider("Age of Property (Years)", 0, 50, 2)
 
 # --- PROCESSING ---
 if st.button("Analyze Property 🚀", type="primary"):
-    # 1. Map inputs to match Day 3 LabelEncoding
-    # Important: index starts at 0, matching alphabetical encoding
+    # 1. Map inputs to index values (0, 1, 2...)
     city_idx = cities.index(city)
     type_idx = types.index(property_type)
     transit_idx = transits.index(transport)
 
-    # 2. Build the input row using a real row from your data as a template
-    # This ensures "hidden" features like Locality/Facing are realistic
+    # 2. Use a real row from your data as a template to avoid missing columns
     input_row = df_clean[df_clean['City'] == city_idx].iloc[0:1].copy()
     
     # 3. Overwrite with UI values
@@ -51,18 +48,21 @@ if st.button("Analyze Property 🚀", type="primary"):
     input_row['Size_in_SqFt'] = size_sqft
     input_row['Price_in_Lakhs'] = current_price
     input_row['Age_of_Property'] = age
-    # Recalculate based on Day 3 logic
-    input_row['Price_per_SqFt'] = (current_price * 100000) / size_sqft 
     input_row['BHK'] = max(1, size_sqft // 600)
+    input_row['Price_per_SqFt'] = (current_price * 100000) / size_sqft 
 
-    # 4. Ensure Column Order is EXACTLY what the model expects
-    X_input = input_row[model_features]
+    # 4. STRICT ALIGNMENT: Reorder columns to match 'model_features.pkl' exactly
+    X_input = input_row[model_features].astype(float)
+
+    # --- PREDICTIONS ---
+    # Random Forest expects all features including Price_per_SqFt
+    is_good = rf_model.predict(X_input)[0]
+    
+    # XGBoost usually drops Price_per_SqFt (Day 4 Logic)
+    xgb_features = [f for f in model_features if f != 'Price_per_SqFt']
+    future_price = xgb_model.predict(X_input[xgb_features])[0]
 
     # --- RESULTS ---
-    is_good = rf_model.predict(X_input)[0]
-    # XGBoost usually doesn't need column names, but we keep them consistent
-    future_price = xgb_model.predict(X_input.drop(columns=['Price_per_SqFt'], errors='ignore'))[0]
-
     st.write("---")
     col1, col2 = st.columns(2)
     
@@ -72,13 +72,13 @@ if st.button("Analyze Property 🚀", type="primary"):
             st.balloons()
         else:
             st.error("#### ❌ REJECTED: Sub-Optimal Investment")
-            # EXPLAINER
+            # Logic explainer
             city_median = df_clean[df_clean['City'] == city_idx]['Price_per_SqFt'].median()
             user_psf = (current_price * 100000) / size_sqft
             if user_psf > city_median:
-                st.warning(f"Reason: Your price (₹{user_psf:.0f}/sqft) is higher than the {city} average (₹{city_median:.0f}).")
+                st.warning(f"Price Tip: ₹{user_psf:.0f}/sqft is above the {city} average of ₹{city_median:.0f}.")
 
     with col2:
         st.metric("5-Year Forecast", f"₹ {future_price:.2f} L")
         profit = future_price - current_price
-        st.metric("ROI", f"{(profit/current_price)*100:.1f}%", delta=f"₹{profit:.2f} L")
+        st.metric("Estimated Profit", f"₹{profit:.2f} L", delta=f"{(profit/current_price)*100:.1f}% ROI")
