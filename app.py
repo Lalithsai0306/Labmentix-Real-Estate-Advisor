@@ -4,7 +4,7 @@ import joblib
 import numpy as np
 
 # ============================================================
-# PAGE SETUP & CUSTOM CSS (Adapted from your Food App)
+# PAGE SETUP & CUSTOM CSS 
 # ============================================================
 st.set_page_config(page_title="Labmentix Real Estate AI", layout="wide", initial_sidebar_state="expanded")
 
@@ -72,24 +72,48 @@ if module == "🔍 Investment Advisor":
         age = c6.number_input("Age of Property (Years)", 0, 50, 5)
 
     if st.button("Analyze Property 🚀", use_container_width=True):
-        # Data Prep (Invisible to user)
-        input_data = pd.DataFrame([{'BHK': max(1, size_sqft // 600), 'Size_in_SqFt': size_sqft, 'Price_in_Lakhs': current_price, 'Age_of_Property': age, 'Nearby_Schools': 5, 'Nearby_Hospitals': 3, 'Amenities_Count': 4}])
-        input_data['Property_Type'] = property_type_options.index(property_type)
-        input_data['Public_Transport_Accessibility'] = transport_options.index(transport)
-        input_data['City'] = city_options.index(city)
+        
+        # 1. Create the base input data
+        base_data = {
+            'BHK': max(1, size_sqft // 600),
+            'Size_in_SqFt': size_sqft,
+            'Price_in_Lakhs': current_price,
+            'Price_per_SqFt': (current_price * 100000) / size_sqft, # RF needs this to check if it's undervalued!
+            'Age_of_Property': age,
+            'Nearby_Schools': 5,
+            'Nearby_Hospitals': 3,
+            'Amenities_Count': 4,
+            'Property_Type': property_type_options.index(property_type),
+            'Public_Transport_Accessibility': transport_options.index(transport),
+            'City': city_options.index(city)
+        }
+        
+        # Fill in the standard assumed features
         for col in ['Furnished_Status', 'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status', 'State', 'Locality']:
-            input_data[col] = 1 
+            base_data[col] = 1 
+            
+        input_df = pd.DataFrame([base_data])
         
-        # Ensure exact column order matches the trained model
-        model_cols = xgb_model.get_booster().feature_names
-        # Add Good_Investment temporarily to align with RF if needed, then drop
-        if 'Good_Investment' in model_cols: model_cols.remove('Good_Investment')
+        # 2. Perfect Alignment for Random Forest
+        rf_features = rf_model.feature_names_in_
+        for col in rf_features:
+            if col not in input_df.columns:
+                input_df[col] = 0
+        rf_input = input_df[list(rf_features)] # Reorder columns to match exactly
         
-        # Predictions
-        is_good = rf_model.predict(input_data)[0]
-        future_price = xgb_model.predict(input_data)[0]
+        # 3. Perfect Alignment for XGBoost
+        xgb_features = xgb_model.get_booster().feature_names
+        for col in xgb_features:
+            if col not in input_df.columns:
+                input_df[col] = 0
+        xgb_input = input_df[list(xgb_features)] # Reorder columns to match exactly
+        
+        # 4. Predictions
+        is_good = rf_model.predict(rf_input)[0]
+        future_price = xgb_model.predict(xgb_input)[0]
         profit = future_price - current_price
 
+        # --- UI DISPLAY ---
         st.markdown("---")
         tab1, tab2 = st.tabs(["🎯 AI Verdict", "📈 5-Year Growth Trajectory"])
         
@@ -104,7 +128,7 @@ if module == "🔍 Investment Advisor":
                 
             rc1, rc2, rc3 = st.columns(3)
             rc1.metric("Current Value", f"₹{current_price:.2f} L")
-            rc2.metric("Projected Value (Year 5)", f"₹{future_price:.2f} L", delta=f"{profit:.2f} L")
+            rc2.metric("Projected Value (Year 5)", f"₹{future_price:.2f} L", delta=f"₹{profit:.2f} L")
             rc3.metric("Estimated ROI", f"{(profit/current_price)*100:.1f}%")
 
         with tab2:
