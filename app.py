@@ -70,31 +70,21 @@ input_data = pd.DataFrame([{
 }])
 
 # --- ENCODING ---
-# We manually handle the mapping for City and Property Type to ensure they match the model's training
-categorical_cols = ['Property_Type', 'Furnished_Status', 'Public_Transport_Accessibility', 
-                    'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status']
+# We manually map the categorical inputs to numbers to match the model training
+input_data['Property_Type'] = property_type_options.index(property_type)
+input_data['Public_Transport_Accessibility'] = transport_options.index(transport)
+input_data['City'] = city_options.index(city)
 
-# We keep the State and Locality as they were (already numbers from city_data)
-# We only need to encode the new string inputs from the sidebar/defaults
-le = LabelEncoder()
-for col in categorical_cols:
-    # Use standard encoding logic
-    if col == 'Property_Type':
-        input_data[col] = property_type_options.index(property_type)
-    elif col == 'Public_Transport_Accessibility':
-        input_data[col] = transport_options.index(transport)
-    else:
-        # For fixed defaults (Facing, Security, etc.), we'll just assign a 0 or 1 
-        # to match general encoding patterns
-        input_data[col] = 1 
+# Map simple binary defaults (1 for Yes/Ready/Builder/Semi-furnished etc.)
+# This ensures the model receives numbers, not strings.
+binary_cols = ['Furnished_Status', 'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status']
+for col in binary_cols:
+    input_data[col] = 1 
 
-# Finalize City (we already have the encoded value)
-input_data['City'] = city_encoded_val
+# Convert everything to float/int to avoid the pandas error
+input_data = input_data.astype(float)
 
-# Ensure all columns are numeric before passing to models
-input_data = input_data.apply(pd.to_numeric, errors='ignore')
-
-# Drop Price_per_SqFt for XGBoost
+# Drop Price_per_SqFt for XGBoost as per Day 4 logic
 xgb_input = input_data.drop(columns=['Price_per_SqFt'], errors='ignore')
 
 # --- PREDICTIONS & UI ---
