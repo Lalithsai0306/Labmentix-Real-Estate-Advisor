@@ -2,162 +2,104 @@ import streamlit as st
 import pandas as pd
 import joblib
 import numpy as np
+from sklearn.preprocessing import LabelEncoder
 
-# ============================================================
-# PAGE SETUP & CUSTOM CSS 
-# ============================================================
-st.set_page_config(page_title="Labmentix Real Estate AI", layout="wide", initial_sidebar_state="expanded")
+# --- PAGE SETUP ---
+st.set_page_config(page_title="Labmentix Real Estate AI", layout="wide")
+st.title("🏘️ Real Estate Investment Advisor")
+st.markdown("Developed for Labmentix | Powered by XGBoost & Random Forest")
 
-st.markdown("""
-<style>
-/* ── Page background & typography ────────────────────────── */
-[data-testid="stAppViewContainer"] { background-color: #f8fafc; }
-[data-testid="stSidebar"] { background-color: #eef1f7; border-right: 1px solid #d4daea; }
-h1, h2, h3 { color: #1e293b !important; }
-h1 { border-bottom: 2px solid #cbd5e1; padding-bottom: 0.5rem; }
-/* ── Metric cards & Dataframes ───────────────────────────── */
-[data-testid="stMetric"] { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-[data-testid="stMetricValue"] { color: #0f172a !important; }
-[data-testid="stDataFrame"] { border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-/* ── Buttons ─────────────────────────────────────────────── */
-.stButton > button { background-color: #2563eb !important; color: white !important; border-radius: 8px !important; padding: 0.5rem 1.5rem !important; font-weight: 600 !important; transition: all 0.2s; }
-.stButton > button:hover { background-color: #1d4ed8 !important; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important; }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# CACHED LOADING (Lightning Fast)
-# ============================================================
-@st.cache_resource(show_spinner=False)
+# --- LOAD DATA & MODELS ---
+@st.cache_resource # This speeds up the app by loading models only once
 def load_assets():
-    rf = joblib.load('rf_classifier_model.pkl')
-    xgb = joblib.load('xgboost_price_model.pkl')
-    df = pd.read_csv('ml_ready_housing_data.csv')
-    return rf, xgb, df
+    rf_model = joblib.load('rf_classifier_model.pkl')
+    xgb_model = joblib.load('xgboost_price_model.pkl')
+    # Load the clean data to fit our LabelEncoders on the fly
+    df_clean = pd.read_csv('cleaned_india_housing_prices.csv')
+    return rf_model, xgb_model, df_clean
 
 rf_model, xgb_model, df_clean = load_assets()
 
-# Options for human-readable dropdowns
-city_options = ['mumbai', 'delhi', 'bangalore', 'hyderabad', 'ahmedabad', 'chennai', 'kolkata', 'surat', 'pune', 'jaipur']
-property_type_options = ['Apartment', 'Independent House', 'Villa', 'Penthouse']
-transport_options = ['High', 'Medium', 'Low']
+# --- SIDEBAR INPUTS ---
+st.sidebar.header("Property Details")
 
-# ============================================================
-# SIDEBAR NAVIGATION
-# ============================================================
-with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/real-estate.png", width=60)
-    st.title("Labmentix AI")
-    st.caption("Investment Analytics Engine")
-    st.markdown("---")
-    module = st.radio("Navigation", ["🔍 Investment Advisor", "📊 Market Insights", "🤖 AI Model Metrics"])
+# We use the unique values from our dataset for the dropdowns
+city = st.sidebar.selectbox("City", df_clean['City'].unique())
+property_type = st.sidebar.selectbox("Property Type", df_clean['Property_Type'].unique())
+transport = st.sidebar.selectbox("Public Transport Accessibility", ['High', 'Medium', 'Low'])
 
-# ============================================================
-# MODULE 1: INVESTMENT ADVISOR (The Main Tool)
-# ============================================================
-if module == "🔍 Investment Advisor":
-    st.title("🏘️ Investment Advisor & Price Predictor")
-    st.write("Input property parameters to receive an instant AI viability classification and 5-year financial forecast.")
+size_sqft = st.sidebar.slider("Size (SqFt)", 500, 5000, 1500)
+current_price = st.sidebar.number_input("Current Asking Price (Lakhs)", min_value=10.0, max_value=1000.0, value=150.0)
+age = st.sidebar.slider("Age of Property (Years)", 0, 50, 5)
 
-    with st.container():
-        st.subheader("Property Parameters")
-        c1, c2, c3 = st.columns(3)
-        city = c1.selectbox("City", options=city_options, index=3)
-        property_type = c2.selectbox("Property Type", options=property_type_options)
-        transport = c3.selectbox("Transit Access", options=transport_options)
+# --- INFER MINOR FEATURES ---
+# To make the app user-friendly, we don't ask the user for all 20 columns. 
+# We assume standard values for the minor features based on the chosen city.
+city_data = df_clean[df_clean['City'] == city].iloc[0]
 
-        c4, c5, c6 = st.columns(3)
-        size_sqft = c4.number_input("Size (SqFt)", 500, 5000, 1500)
-        current_price = c5.number_input("Current Asking Price (Lakhs)", 10.0, 1000.0, 150.0)
-        age = c6.number_input("Age of Property (Years)", 0, 50, 5)
+# Construct the raw dataframe for prediction
+input_data = pd.DataFrame([{
+    'State': city_data['State'],
+    'City': city,
+    'Locality': city_data['Locality'],
+    'Property_Type': property_type,
+    'BHK': max(1, size_sqft // 600), # Rough estimate
+    'Size_in_SqFt': size_sqft,
+    'Price_in_Lakhs': current_price,
+    'Price_per_SqFt': current_price / size_sqft,
+    'Furnished_Status': 'Semi-furnished',
+    'Floor_No': 3,
+    'Total_Floors': 10,
+    'Age_of_Property': age,
+    'Nearby_Schools': 5,
+    'Nearby_Hospitals': 3,
+    'Public_Transport_Accessibility': transport,
+    'Parking_Space': 'Yes',
+    'Security': 'Yes',
+    'Facing': 'East',
+    'Owner_Type': 'Builder',
+    'Availability_Status': 'Ready_to_Move',
+    'Amenities_Count': 4
+}])
 
-    if st.button("Analyze Property 🚀", use_container_width=True):
-        
-        # 1. Create the base input data
-        base_data = {
-            'BHK': max(1, size_sqft // 600),
-            'Size_in_SqFt': size_sqft,
-            'Price_in_Lakhs': current_price,
-            'Price_per_SqFt': (current_price * 100000) / size_sqft, # RF needs this to check if it's undervalued!
-            'Age_of_Property': age,
-            'Nearby_Schools': 5,
-            'Nearby_Hospitals': 3,
-            'Amenities_Count': 4,
-            'Property_Type': property_type_options.index(property_type),
-            'Public_Transport_Accessibility': transport_options.index(transport),
-            'City': city_options.index(city)
-        }
-        
-        # Fill in the standard assumed features
-        for col in ['Furnished_Status', 'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status', 'State', 'Locality']:
-            base_data[col] = 1 
+# --- ENCODING ---
+# We must apply the exact same LabelEncoding as Day 3
+categorical_cols = ['Property_Type', 'Furnished_Status', 'Public_Transport_Accessibility', 
+                    'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status', 
+                    'State', 'City', 'Locality']
+
+le = LabelEncoder()
+for col in categorical_cols:
+    le.fit(df_clean[col].astype(str)) # Learn the vocabulary
+    # Safely transform the input
+    input_data[col] = input_data[col].map(lambda s: le.transform([s])[0] if s in le.classes_ else 0)
+
+# Drop Price_per_SqFt for XGBoost (as per Day 4 logic)
+xgb_input = input_data.drop(columns=['Price_per_SqFt'], errors='ignore')
+
+# --- PREDICTIONS & UI ---
+st.write("---")
+st.subheader("AI Investment Analysis")
+
+col1, col2 = st.columns(2)
+
+if st.button("Analyze Property", type="primary"):
+    # 1. Classification (Good/Bad Investment)
+    is_good = rf_model.predict(input_data)[0]
+    
+    # 2. Regression (Future Price)
+    future_price = xgb_model.predict(xgb_input)[0]
+    
+    with col1:
+        if is_good == 1:
+            st.success("✅ **APPROVED:** This is classified as a Good Investment.")
+        else:
+            st.error("❌ **REJECTED:** This property does not meet high-yield investment criteria.")
             
-        input_df = pd.DataFrame([base_data])
-        
-        # 2. Perfect Alignment for Random Forest
-        rf_features = rf_model.feature_names_in_
-        for col in rf_features:
-            if col not in input_df.columns:
-                input_df[col] = 0
-        rf_input = input_df[list(rf_features)] # Reorder columns to match exactly
-        
-        # 3. Perfect Alignment for XGBoost
-        xgb_features = xgb_model.get_booster().feature_names
-        for col in xgb_features:
-            if col not in input_df.columns:
-                input_df[col] = 0
-        xgb_input = input_df[list(xgb_features)] # Reorder columns to match exactly
-        
-        # 4. Predictions
-        is_good = rf_model.predict(rf_input)[0]
-        future_price = xgb_model.predict(xgb_input)[0]
+    with col2:
+        st.info(f"📈 **5-Year Forecast:** ₹ {future_price:.2f} Lakhs")
         profit = future_price - current_price
+        st.metric(label="Estimated Profit", value=f"₹ {profit:.2f} Lakhs", delta=f"{(profit/current_price)*100:.1f}%")
 
-        # --- UI DISPLAY ---
-        st.markdown("---")
-        tab1, tab2 = st.tabs(["🎯 AI Verdict", "📈 5-Year Growth Trajectory"])
-        
-        with tab1:
-            if is_good == 1:
-                st.success("#### ✅ APPROVED: High-Yield Investment Detected")
-                st.write("This property aligns with Labmentix parameters for strong appreciation and market liquidity.")
-                st.balloons()
-            else:
-                st.error("#### ❌ REJECTED: Sub-Optimal Investment")
-                st.write("This property fails our risk-to-reward ratio. Highly likely to underperform market averages.")
-                
-            rc1, rc2, rc3 = st.columns(3)
-            rc1.metric("Current Value", f"₹{current_price:.2f} L")
-            rc2.metric("Projected Value (Year 5)", f"₹{future_price:.2f} L", delta=f"₹{profit:.2f} L")
-            rc3.metric("Estimated ROI", f"{(profit/current_price)*100:.1f}%")
-
-        with tab2:
-            st.write("Projected linear asset appreciation over the holding period:")
-            yearly_growth = profit / 5
-            chart_data = pd.DataFrame({"Year": ["Now", "Y1", "Y2", "Y3", "Y4", "Y5"], 
-                                       "Value (Lakhs)": [current_price, current_price+yearly_growth, current_price+yearly_growth*2, current_price+yearly_growth*3, current_price+yearly_growth*4, future_price]})
-            st.line_chart(chart_data.set_index("Year"))
-
-# ============================================================
-# MODULE 2: MARKET INSIGHTS (EDA)
-# ============================================================
-elif module == "📊 Market Insights":
-    st.title("📊 Macro Market Insights")
-    st.write("Data derived from 250,000+ national property records.")
-    
-    st.subheader("Asset Distribution")
-    st.write("The AI was trained primarily on Apartment data, reflecting current urban supply.")
-    st.bar_chart(df_clean['Property_Type'].value_counts())
-
-# ============================================================
-# MODULE 3: AI MODEL METRICS
-# ============================================================
-elif module == "🤖 AI Model Metrics":
-    st.title("🤖 ML Engine Specifications")
-    st.write("Transparency report for the deployed machine learning models.")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.info("### Classification Engine\n**Algorithm:** Random Forest\n**Target:** Investment Viability\n**Role:** Gates properties based on undervalued pricing and infrastructure.")
-    with c2:
-        st.success("### Forecasting Engine\n**Algorithm:** XGBoost Regressor\n**Target:** 5-Year Future Price\n**Role:** Predicts exact exit value based on 21 regional variables.")
+st.write("---")
+st.caption("Note: This tool uses XGBoost and Random Forest algorithms trained on historical data. Market conditions may vary.")
