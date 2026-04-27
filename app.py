@@ -73,12 +73,12 @@ if module == "🔍 Investment Advisor":
 
     if st.button("Analyze Property 🚀", use_container_width=True):
         
-        # 1. Create the base input data
+      # 1. Create the base input data
         base_data = {
             'BHK': max(1, size_sqft // 600),
             'Size_in_SqFt': size_sqft,
             'Price_in_Lakhs': current_price,
-            'Price_per_SqFt': (current_price * 100000) / size_sqft, # RF needs this to check if it's undervalued!
+            'Price_per_SqFt': (current_price * 100000) / size_sqft, 
             'Age_of_Property': age,
             'Nearby_Schools': 5,
             'Nearby_Hospitals': 3,
@@ -88,9 +88,12 @@ if module == "🔍 Investment Advisor":
             'City': city_options.index(city)
         }
         
-        # Fill in the standard assumed features
+        # THE FIX: Dynamically find the most common (safest) baseline values instead of hardcoding 1
         for col in ['Furnished_Status', 'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status', 'State', 'Locality']:
-            base_data[col] = 1 
+            if col in df_clean.columns:
+                base_data[col] = df_clean[col].mode()[0]
+            else:
+                base_data[col] = 1 
             
         input_df = pd.DataFrame([base_data])
         
@@ -99,17 +102,22 @@ if module == "🔍 Investment Advisor":
         for col in rf_features:
             if col not in input_df.columns:
                 input_df[col] = 0
-        rf_input = input_df[list(rf_features)] # Reorder columns to match exactly
+        rf_input = input_df[list(rf_features)] 
         
         # 3. Perfect Alignment for XGBoost
         xgb_features = xgb_model.get_booster().feature_names
         for col in xgb_features:
             if col not in input_df.columns:
                 input_df[col] = 0
-        xgb_input = input_df[list(xgb_features)] # Reorder columns to match exactly
+        xgb_input = input_df[list(xgb_features)] 
         
-        # 4. Predictions
+        # 4. Predictions & Confidence Scoring
         is_good = rf_model.predict(rf_input)[0]
+        
+        # Get the AI's exact confidence percentage
+        confidence_probs = rf_model.predict_proba(rf_input)[0]
+        good_probability = float(confidence_probs[1]) # Probability of being a "Good Investment"
+        
         future_price = xgb_model.predict(xgb_input)[0]
         profit = future_price - current_price
 
@@ -125,6 +133,9 @@ if module == "🔍 Investment Advisor":
             else:
                 st.error("#### ❌ REJECTED: Sub-Optimal Investment")
                 st.write("This property fails our risk-to-reward ratio. Highly likely to underperform market averages.")
+            
+            # The new Confidence Bar UI
+            st.progress(good_probability, text=f"AI Confidence Score: {good_probability*100:.1f}%")
                 
             rc1, rc2, rc3 = st.columns(3)
             rc1.metric("Current Value", f"₹{current_price:.2f} L")
@@ -137,39 +148,3 @@ if module == "🔍 Investment Advisor":
             chart_data = pd.DataFrame({"Year": ["Now", "Y1", "Y2", "Y3", "Y4", "Y5"], 
                                        "Value (Lakhs)": [current_price, current_price+yearly_growth, current_price+yearly_growth*2, current_price+yearly_growth*3, current_price+yearly_growth*4, future_price]})
             st.line_chart(chart_data.set_index("Year"))
-
-# ============================================================
-# MODULE 2: MARKET INSIGHTS (EDA)
-# ============================================================
-elif module == "📊 Market Insights":
-    st.title("📊 Macro Market Insights")
-    st.write("Data derived from 250,000+ national property records.")
-    
-    st.subheader("Asset Distribution")
-    st.write("The AI was trained primarily on Apartment data, reflecting current urban supply.")
-   # 1. Count the raw numbers
-    property_counts = df_clean['Property_Type'].value_counts()
-    
-    # 2. Translate the numbers back to English labels
-    property_counts.index = property_counts.index.map({
-        0: 'Apartment', 
-        1: 'Independent House', 
-        2: 'Villa', 
-        3: 'Penthouse'
-    })
-    
-    # 3. Draw the chart with a custom Y-axis label
-    st.bar_chart(property_counts, y_label="Number of Properties")
-
-# ============================================================
-# MODULE 3: AI MODEL METRICS
-# ============================================================
-elif module == "🤖 AI Model Metrics":
-    st.title("🤖 ML Engine Specifications")
-    st.write("Transparency report for the deployed machine learning models.")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.info("### Classification Engine\n**Algorithm:** Random Forest\n**Target:** Investment Viability\n**Role:** Gates properties based on undervalued pricing and infrastructure.")
-    with c2:
-        st.success("### Forecasting Engine\n**Algorithm:** XGBoost Regressor\n**Target:** 5-Year Future Price\n**Role:** Predicts exact exit value based on 21 regional variables.")
