@@ -56,7 +56,7 @@ with st.sidebar:
 # MODULE 1: INVESTMENT ADVISOR (The Main Tool)
 # ============================================================
 if module == "🔍 Investment Advisor":
-    st.title("🏘️ Investment Advisor & Price Predictor")
+    st.title("Real Estate Investment Advisor")
     st.write("Input property parameters to receive an instant AI viability classification and 5-year financial forecast.")
 
     with st.container():
@@ -147,7 +147,19 @@ elif module == "📊 Market Insights":
     
     st.subheader("Asset Distribution")
     st.write("The AI was trained primarily on Apartment data, reflecting current urban supply.")
-    st.bar_chart(df_clean['Property_Type'].value_counts())
+   # 1. Count the raw numbers
+    property_counts = df_clean['Property_Type'].value_counts()
+    
+    # 2. Translate the numbers back to English labels
+    property_counts.index = property_counts.index.map({
+        0: 'Apartment', 
+        1: 'Independent House', 
+        2: 'Villa', 
+        3: 'Penthouse'
+    })
+    
+    # 3. Draw the chart with a custom Y-axis label
+    st.bar_chart(property_counts, y_label="Number of Properties")
 
 # ============================================================
 # MODULE 3: AI MODEL METRICS
