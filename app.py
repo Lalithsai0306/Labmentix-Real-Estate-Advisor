@@ -103,8 +103,7 @@ if st.button("Analyze Property 🚀", type="primary", use_container_width=True):
         st.subheader("Investment Decision")
         if is_good == 1:
             st.success("✅ **APPROVED:** The AI classifies this as a High-Yield Investment.")
-            
-         else:
+        else:
             st.error("❌ **REJECTED:** This property does not meet high-yield criteria. High risk of low appreciation.")
             
     with tab2:
