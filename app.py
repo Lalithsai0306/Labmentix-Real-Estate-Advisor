@@ -37,10 +37,10 @@ def load_assets():
 
 rf_model, xgb_model, df_clean = load_assets()
 
-# Options for human-readable dropdowns
-city_options = ['mumbai', 'delhi', 'bangalore', 'hyderabad', 'ahmedabad', 'chennai', 'kolkata', 'surat', 'pune', 'jaipur']
-property_type_options = ['Apartment', 'Independent House', 'Villa', 'Penthouse']
-transport_options = ['High', 'Medium', 'Low']
+# Options mapped alphabetically to perfectly match the AI's LabelEncoder
+city_options = sorted(['mumbai', 'delhi', 'bangalore', 'hyderabad', 'ahmedabad', 'chennai', 'kolkata', 'surat', 'pune', 'jaipur'])
+property_type_options = sorted(['Apartment', 'Independent House', 'Villa', 'Penthouse'])
+transport_options = sorted(['High', 'Medium', 'Low'])
 
 # ============================================================
 # SIDEBAR NAVIGATION
