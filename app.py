@@ -75,14 +75,18 @@ if module == "🔍 Investment Advisor":
         else:
             city_median_sqft = 4000 
             
-       # Calculate a price that is exactly 10% cheaper than the city average
+        # Calculate a price that is exactly 10% cheaper than the city average
         guaranteed_safe_price = round(((city_median_sqft * size_sqft) / 100000) * 0.90, 2)
         
-        # THE FIX: Ensure the auto-calculated price NEVER drops below 1.0
+        # Ensure the auto-calculated price NEVER drops below 1.0
         safe_default = max(1.0, float(guaranteed_safe_price))
         
         # Inject the safe price directly into the input box as the default
         current_price = c5.number_input("Current Asking Price (Lakhs)", 1.0, 5000.0, safe_default)
+        
+        # --- THE FIX: Re-added the missing Age input box here! ---
+        age = c6.number_input("Age of Property (Years)", 0, 50, 2)
+
     if st.button("Analyze Property 🚀", use_container_width=True):
         
         # Grab a perfect baseline property from the dataset
