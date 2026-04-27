@@ -89,27 +89,44 @@ xgb_input = input_data.drop(columns=['Price_per_SqFt'], errors='ignore')
 
 # --- PREDICTIONS & UI ---
 st.write("---")
-st.subheader("AI Investment Analysis")
 
-col1, col2 = st.columns(2)
-
-if st.button("Analyze Property", type="primary"):
-    # 1. Classification
+if st.button("Analyze Property 🚀", type="primary", use_container_width=True):
+    # 1. Classification & Regression
     is_good = rf_model.predict(input_data)[0]
-    
-    # 2. Regression
     future_price = xgb_model.predict(xgb_input)[0]
+    profit = future_price - current_price
     
-    with col1:
+    # Create Professional Tabs
+    tab1, tab2, tab3 = st.tabs(["🎯 Verdict", "📈 Financial Forecast", "🤖 AI Insights"])
+    
+    with tab1:
+        st.subheader("Investment Decision")
         if is_good == 1:
-            st.success("✅ **APPROVED:** This is classified as a Good Investment.")
-        else:
-            st.error("❌ **REJECTED:** This property does not meet high-yield investment criteria.")
+            st.success("✅ **APPROVED:** The AI classifies this as a High-Yield Investment.")
             
-    with col2:
-        st.info(f"📈 **5-Year Forecast:** ₹ {future_price:.2f} Lakhs")
-        profit = future_price - current_price
-        st.metric(label="Estimated Profit", value=f"₹ {profit:.2f} Lakhs", delta=f"{(profit/current_price)*100:.1f}%")
-
-st.write("---")
-st.caption("Note: This tool uses XGBoost and Random Forest algorithms trained on historical data. Market conditions may vary.")
+         else:
+            st.error("❌ **REJECTED:** This property does not meet high-yield criteria. High risk of low appreciation.")
+            
+    with tab2:
+        st.subheader("5-Year Value Projection")
+        col1, col2 = st.columns(2)
+        col1.metric(label="Current Asking Price", value=f"₹ {current_price:.2f} L")
+        col2.metric(label="Estimated 5-Year Value", value=f"₹ {future_price:.2f} L", delta=f"₹ {profit:.2f} L Profit")
+        
+        # Create dynamic yearly data for a chart
+        yearly_growth = (future_price - current_price) / 5
+        chart_data = pd.DataFrame({
+            "Year": ["Current", "Year 1", "Year 2", "Year 3", "Year 4", "Year 5"],
+            "Estimated Value (Lakhs)": [current_price, current_price + yearly_growth, current_price + yearly_growth*2, 
+                                        current_price + yearly_growth*3, current_price + yearly_growth*4, future_price]
+        })
+        st.line_chart(chart_data.set_index("Year"))
+        
+    with tab3:
+        st.subheader("How did the AI decide?")
+        with st.expander("View Model Logic"):
+            st.write("The **Random Forest Classifier** evaluated this property based on:")
+            st.write(f"- **Valuation:** Compared your price of ₹{current_price}L against the city average.")
+            st.write(f"- **Property Age:** Factored in that the property is {age} years old.")
+            st.write(f"- **Transport:** Adjusted score based on '{transport}' transit accessibility.")
+            st.caption("The XGBoost Regressor calculated the exact future price based on 21 micro-features.")
