@@ -34,7 +34,6 @@ def load_assets():
 
 rf_model, xgb_model, df_clean = load_assets()
 
-# Alphabetical sorting ensures perfect LabelEncoder mapping
 city_options = sorted(['mumbai', 'delhi', 'bangalore', 'hyderabad', 'ahmedabad', 'chennai', 'kolkata', 'surat', 'pune', 'jaipur'])
 property_type_options = sorted(['Apartment', 'Independent House', 'Villa', 'Penthouse'])
 transport_options = sorted(['High', 'Medium', 'Low'])
@@ -65,16 +64,34 @@ if module == "🔍 Investment Advisor":
 
         c4, c5, c6 = st.columns(3)
         size_sqft = c4.number_input("Size (SqFt)", 500, 5000, 1500)
-        current_price = c5.number_input("Current Asking Price (Lakhs)", 10.0, 1000.0, 35.0) # Lowered default to show Approval
+        
+        # --- THE MAGIC TRICK: Auto-Calculate a Guaranteed Approved Price ---
+        encoded_city = city_options.index(city)
+        city_data = df_clean[df_clean['City'] == encoded_city]
+        
+        # Find the actual median price per sqft for this specific city
+        if not city_data.empty:
+            city_median_sqft = city_data['Price_per_SqFt'].median()
+        else:
+            city_median_sqft = 4000 
+            
+        # Calculate a price that is exactly 10% cheaper than the city average
+        guaranteed_safe_price = round(((city_median_sqft * size_sqft) / 100000) * 0.90, 2)
+        
+        # Inject the safe price directly into the input box as the default
+        current_price = c5.number_input("Current Asking Price (Lakhs)", 1.0, 5000.0, float(guaranteed_safe_price))
         age = c6.number_input("Age of Property (Years)", 0, 50, 2)
 
     if st.button("Analyze Property 🚀", use_container_width=True):
         
-        # --- THE ULTIMATE FIX: The "Template" Method ---
-        # Grab a perfect, real baseline property from the dataset so we don't miss Floor_No or Locality values
-        baseline_row = df_clean[df_clean['Good_Investment'] == 1].iloc[0].copy()
+        # Grab a perfect baseline property from the dataset
+        baseline_rows = df_clean[df_clean['Good_Investment'] == 1]
+        if not baseline_rows.empty:
+            baseline_row = baseline_rows.iloc[0].copy()
+        else:
+            baseline_row = df_clean.iloc[0].copy()
         
-        # Overwrite the template with the exact things you typed in the UI
+        # Overwrite the template with the UI inputs
         baseline_row['City'] = city_options.index(city)
         baseline_row['Property_Type'] = property_type_options.index(property_type)
         baseline_row['Public_Transport_Accessibility'] = transport_options.index(transport)
@@ -106,6 +123,7 @@ if module == "🔍 Investment Advisor":
             if is_good == 1:
                 st.success("#### ✅ APPROVED: High-Yield Investment Detected")
                 st.write("This property aligns with Labmentix parameters for strong appreciation and market liquidity.")
+                st.balloons()
             else:
                 st.error("#### ❌ REJECTED: Sub-Optimal Investment")
                 st.write("This property fails our risk-to-reward ratio. The price is too high compared to the city average.")
