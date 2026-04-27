@@ -37,10 +37,10 @@ def load_assets():
 
 rf_model, xgb_model, df_clean = load_assets()
 
-# Options mapped alphabetically to perfectly match the AI's LabelEncoder
-city_options = sorted(['mumbai', 'delhi', 'bangalore', 'hyderabad', 'ahmedabad', 'chennai', 'kolkata', 'surat', 'pune', 'jaipur'])
-property_type_options = sorted(['Apartment', 'Independent House', 'Villa', 'Penthouse'])
-transport_options = sorted(['High', 'Medium', 'Low'])
+# Options for human-readable dropdowns
+city_options = ['mumbai', 'delhi', 'bangalore', 'hyderabad', 'ahmedabad', 'chennai', 'kolkata', 'surat', 'pune', 'jaipur']
+property_type_options = ['Apartment', 'Independent House', 'Villa', 'Penthouse']
+transport_options = ['High', 'Medium', 'Low']
 
 # ============================================================
 # SIDEBAR NAVIGATION
@@ -56,20 +56,20 @@ with st.sidebar:
 # MODULE 1: INVESTMENT ADVISOR (The Main Tool)
 # ============================================================
 if module == "🔍 Investment Advisor":
-    st.title("Real Estate Investment Advisor")
+    st.title("🏘️ Investment Advisor & Price Predictor")
     st.write("Input property parameters to receive an instant AI viability classification and 5-year financial forecast.")
 
     with st.container():
         st.subheader("Property Parameters")
         c1, c2, c3 = st.columns(3)
-        city = c1.selectbox("City", options=city_options, index=city_options.index('hyderabad'))
+        city = c1.selectbox("City", options=city_options, index=3)
         property_type = c2.selectbox("Property Type", options=property_type_options)
         transport = c3.selectbox("Transit Access", options=transport_options)
 
         c4, c5, c6 = st.columns(3)
         size_sqft = c4.number_input("Size (SqFt)", 500, 5000, 1500)
-        current_price = c5.number_input("Current Asking Price (Lakhs)", 10.0, 1000.0, 65.0)
-        age = c6.number_input("Age of Property (Years)", 0, 50, 2)
+        current_price = c5.number_input("Current Asking Price (Lakhs)", 10.0, 1000.0, 150.0)
+        age = c6.number_input("Age of Property (Years)", 0, 50, 5)
 
     if st.button("Analyze Property 🚀", use_container_width=True):
         
@@ -78,7 +78,7 @@ if module == "🔍 Investment Advisor":
             'BHK': max(1, size_sqft // 600),
             'Size_in_SqFt': size_sqft,
             'Price_in_Lakhs': current_price,
-            'Price_per_SqFt': (current_price * 100000) / size_sqft, 
+            'Price_per_SqFt': (current_price * 100000) / size_sqft, # RF needs this to check if it's undervalued!
             'Age_of_Property': age,
             'Nearby_Schools': 5,
             'Nearby_Hospitals': 3,
@@ -88,18 +88,9 @@ if module == "🔍 Investment Advisor":
             'City': city_options.index(city)
         }
         
-        # THE ULTIMATE FIX: Secretly pull hidden features ONLY from properties the AI already Approved
-        # This guarantees the Locality, State, etc., are considered "Premium" by the AI.
-        if 'Good_Investment' in df_clean.columns:
-            best_props = df_clean[df_clean['Good_Investment'] == 1]
-        else:
-            best_props = df_clean
-            
+        # Fill in the standard assumed features
         for col in ['Furnished_Status', 'Parking_Space', 'Security', 'Facing', 'Owner_Type', 'Availability_Status', 'State', 'Locality']:
-            if col in best_props.columns:
-                base_data[col] = best_props[col].mode()[0]
-            else:
-                base_data[col] = 1 
+            base_data[col] = 1 
             
         input_df = pd.DataFrame([base_data])
         
@@ -108,20 +99,17 @@ if module == "🔍 Investment Advisor":
         for col in rf_features:
             if col not in input_df.columns:
                 input_df[col] = 0
-        rf_input = input_df[list(rf_features)] 
+        rf_input = input_df[list(rf_features)] # Reorder columns to match exactly
         
         # 3. Perfect Alignment for XGBoost
         xgb_features = xgb_model.get_booster().feature_names
         for col in xgb_features:
             if col not in input_df.columns:
                 input_df[col] = 0
-        xgb_input = input_df[list(xgb_features)] 
+        xgb_input = input_df[list(xgb_features)] # Reorder columns to match exactly
         
-        # 4. Predictions & Confidence Scoring
+        # 4. Predictions
         is_good = rf_model.predict(rf_input)[0]
-        confidence_probs = rf_model.predict_proba(rf_input)[0]
-        good_probability = float(confidence_probs[1]) 
-        
         future_price = xgb_model.predict(xgb_input)[0]
         profit = future_price - current_price
 
@@ -137,8 +125,6 @@ if module == "🔍 Investment Advisor":
             else:
                 st.error("#### ❌ REJECTED: Sub-Optimal Investment")
                 st.write("This property fails our risk-to-reward ratio. Highly likely to underperform market averages.")
-            
-            st.progress(good_probability, text=f"AI Confidence Score: {good_probability*100:.1f}%")
                 
             rc1, rc2, rc3 = st.columns(3)
             rc1.metric("Current Value", f"₹{current_price:.2f} L")
@@ -161,12 +147,7 @@ elif module == "📊 Market Insights":
     
     st.subheader("Asset Distribution")
     st.write("The AI was trained primarily on Apartment data, reflecting current urban supply.")
-    
-    property_counts = df_clean['Property_Type'].value_counts()
-    property_counts.index = property_counts.index.map({
-        0: 'Apartment', 1: 'Independent House', 2: 'Villa', 3: 'Penthouse'
-    })
-    st.bar_chart(property_counts, y_label="Number of Properties")
+    st.bar_chart(df_clean['Property_Type'].value_counts())
 
 # ============================================================
 # MODULE 3: AI MODEL METRICS
