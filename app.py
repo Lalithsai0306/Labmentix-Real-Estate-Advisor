@@ -106,7 +106,7 @@ if module == "🔍 Investment Advisor":
             if is_good == 1:
                 st.success("#### ✅ APPROVED: High-Yield Investment Detected")
                 st.write("This property aligns with Labmentix parameters for strong appreciation and market liquidity.")
-               else:
+            else:
                 st.error("#### ❌ REJECTED: Sub-Optimal Investment")
                 st.write("This property fails our risk-to-reward ratio. The price is too high compared to the city average.")
             
