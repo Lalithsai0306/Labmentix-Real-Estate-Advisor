@@ -15,7 +15,7 @@ def load_assets():
     rf_model = joblib.load('rf_classifier_model.pkl')
     xgb_model = joblib.load('xgboost_price_model.pkl')
     # Load the clean data to fit our LabelEncoders on the fly
-    df_clean = pd.read_csv('cleaned_india_housing_prices.csv')
+    df_clean = pd.read_csv('ml_ready_housing_data.csv')
     return rf_model, xgb_model, df_clean
 
 rf_model, xgb_model, df_clean = load_assets()
